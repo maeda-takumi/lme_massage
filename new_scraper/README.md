@@ -16,14 +16,13 @@ python -m new_scraper.main
 ### PHP API 経由で実行する場合
 
 1. サーバー上に `db_bridge.php` と `config.php` を配置する
-2. API URL を環境変数 `LME_DB_API_URL` に設定して実行する
+2. `new_scraper/db.py` の `DEFAULT_DB_API_URL` を利用する（必要なら固定値を書き換える）
 
 ```bash
-export LME_DB_API_URL="https://<your-domain>/db_bridge.php"
 python -m new_scraper.main
 ```
 
-`LME_DB_API_URL` が設定されている場合、`new_scraper` は MySQL へ直接接続せず、
+`USE_DB_API_BY_DEFAULT = True` の場合、`new_scraper` は MySQL へ直接接続せず、
 HTTP POST(JSON) で DB 操作を行います。
 
 ## 事前準備
@@ -33,3 +32,9 @@ mysql -u <user> -p <db> < sql/create_lme_tables.sql
 ```
 
 または `main.py` 実行時に `initialize_tables()` で作成されます。
+
+## 接続トラブル時の確認
+
+- `config.php` に `DB_PORT` がある場合は自動で読み取ります（未指定時は `3306`）。
+- `Can't connect to MySQL server` が出る場合は、MySQL サービスの起動状態と `DB_HOST` / `DB_PORT` を確認してください。
+- ローカルから DB へ直接接続できない場合は `LME_DB_API_URL` を設定して PHP API 経由モードを利用してください。
