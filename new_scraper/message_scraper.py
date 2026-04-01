@@ -11,7 +11,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from .db import get_connection
+from .db import call_db_api, get_connection, use_api_mode
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -127,56 +127,113 @@ def scrape_messages(driver, base_url="https://step.lme.jp"):
     target_date = (datetime.now(JST) - timedelta(days=1)).strftime("%Y-%m-%d")
     print(f"🗓 取得対象日(JST): {target_date}")
 
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, href FROM lme_users ORDER BY id ASC")
-            users = cur.fetchall()
+    api_mode = use_api_mode()
 
-            for user in users:
-                user_id, href = user["id"], user["href"]
-                print(f"🟡 ユーザーID {user_id} のチャットを取得中…")
+    users = None
+    if api_mode:
+        users = call_db_api("list_users").get("data", [])
+    else:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, href FROM lme_users ORDER BY id ASC")
+                users = cur.fetchall()
 
-                driver.get(base_url + href)
-                chat_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "a.btn-sns-line-my-page"))
+    if api_mode:
+        for user in users:
+            user_id, href = user["id"], user["href"]
+            print(f"🟡 ユーザーID {user_id} のチャットを取得中…")
+
+            driver.get(base_url + href)
+            chat_button = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "a.btn-sns-line-my-page"))
+            )
+            chat_button.click()
+            time.sleep(3)
+
+            scroll_chat_to_top(driver)
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            message_blocks = soup.select("#messages-container-v2 > div")
+
+            current_date = None
+            for block in message_blocks:
+                date_header = block.select_one(".time-center")
+                if date_header:
+                    raw = date_header.get_text(strip=True)
+                    m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", raw)
+                    if m:
+                        y, mo, d = map(int, m.groups())
+                        current_date = f"{y:04d}-{mo:02d}-{d:02d}"
+
+                sender = "you" if block.select_one(".you") else "me" if block.select_one(".me") else None
+                if not sender:
+                    continue
+
+                msg_div = block.select_one(".message")
+                time_div = block.select_one(".time-send")
+                if not (msg_div and time_div):
+                    continue
+
+                time_sent = normalize_time_sent(current_date, time_div.get_text(strip=True))
+                if not time_sent or time_sent[:10] != target_date:
+                    continue
+
+                sender_name = _extract_sender_name_from_block(block)
+                text = msg_div.get_text(separator="\n").strip()
+                call_db_api(
+                    "insert_message",
+                    {
+                        "user_id": user_id,
+                        "sender": sender,
+                        "sender_name": sender_name,
+                        "message": text,
+                        "time_sent": time_sent,
+                    },
                 )
-                chat_button.click()
-                time.sleep(3)
+    else:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                for user in users:
+                    user_id, href = user["id"], user["href"]
+                    print(f"🟡 ユーザーID {user_id} のチャットを取得中…")
 
-                scroll_chat_to_top(driver)
-                soup = BeautifulSoup(driver.page_source, "html.parser")
-                message_blocks = soup.select("#messages-container-v2 > div")
+                    driver.get(base_url + href)
+                    chat_button = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.CSS_SELECTOR, "a.btn-sns-line-my-page"))
+                    )
+                    chat_button.click()
+                    time.sleep(3)
 
-                current_date = None
-                for block in message_blocks:
-                    date_header = block.select_one(".time-center")
-                    if date_header:
-                        raw = date_header.get_text(strip=True)
-                        m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", raw)
-                        if m:
-                            y, mo, d = map(int, m.groups())
-                            current_date = f"{y:04d}-{mo:02d}-{d:02d}"
+                    scroll_chat_to_top(driver)
+                    soup = BeautifulSoup(driver.page_source, "html.parser")
+                    message_blocks = soup.select("#messages-container-v2 > div")
 
-                    sender = "you" if block.select_one(".you") else "me" if block.select_one(".me") else None
-                    if not sender:
-                        continue
+                    current_date = None
+                    for block in message_blocks:
+                        date_header = block.select_one(".time-center")
+                        if date_header:
+                            raw = date_header.get_text(strip=True)
+                            m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", raw)
+                            if m:
+                                y, mo, d = map(int, m.groups())
+                                current_date = f"{y:04d}-{mo:02d}-{d:02d}"
 
-                    msg_div = block.select_one(".message")
-                    time_div = block.select_one(".time-send")
-                    if not (msg_div and time_div):
-                        continue
+                        sender = "you" if block.select_one(".you") else "me" if block.select_one(".me") else None
+                        if not sender:
+                            continue
 
-                    time_sent = normalize_time_sent(current_date, time_div.get_text(strip=True))
-                    if not time_sent:
-                        continue
+                        msg_div = block.select_one(".message")
+                        time_div = block.select_one(".time-send")
+                        if not (msg_div and time_div):
+                            continue
 
-                    if time_sent[:10] != target_date:
-                        continue
+                        time_sent = normalize_time_sent(current_date, time_div.get_text(strip=True))
+                        if not time_sent or time_sent[:10] != target_date:
+                            continue
 
-                    sender_name = _extract_sender_name_from_block(block)
-                    text = msg_div.get_text(separator="\n").strip()
-                    _save_message(cur, user_id, sender, sender_name, text, time_sent)
-
+                        sender_name = _extract_sender_name_from_block(block)
+                        text = msg_div.get_text(separator="\n").strip()
+                        _save_message(cur, user_id, sender, sender_name, text, time_sent)
+                        
             conn.commit()
 
     print("🎉 前日分メッセージ取得が完了しました！")

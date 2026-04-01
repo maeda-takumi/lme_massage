@@ -1,7 +1,9 @@
-from .db import get_connection
-
+from .db import call_db_api, get_connection, use_api_mode
 
 def initialize_tables():
+    if use_api_mode():
+        call_db_api("initialize_tables")
+        return
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute(

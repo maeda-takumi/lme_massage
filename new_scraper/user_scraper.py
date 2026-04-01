@@ -10,7 +10,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from .db import get_connection
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+from .db import call_db_api, get_connection, use_api_mode
 
 BASE_URL = "https://step.lme.jp/"
 DT_RE = re.compile(r"(\d{4}[./-]\d{2}[./-]\d{2})\s+(\d{2}:\d{2})(?::\d{2})?")
@@ -75,6 +77,18 @@ def fetch_user_detail_info(driver, href, timeout=12):
 
 
 def save_user(name, href, friend_registered_at=None, support=None, display_name=None):
+    if use_api_mode():
+        call_db_api(
+            "upsert_user",
+            {
+                "line_name": name,
+                "href": href,
+                "friend_registered_at": friend_registered_at,
+                "support": support,
+                "display_name": display_name,
+            },
+        )
+        return
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM lme_users WHERE href = %s ORDER BY id ASC LIMIT 1", (href,))
@@ -101,6 +115,9 @@ def save_user(name, href, friend_registered_at=None, support=None, display_name=
 
 
 def clear_tables():
+    if use_api_mode():
+        call_db_api("clear_tables")
+        return
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM lme_users")
