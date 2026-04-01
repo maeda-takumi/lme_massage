@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from bs4 import BeautifulSoup
@@ -96,6 +96,12 @@ def normalize_time_sent(current_date: str | None, time_sent_raw: str):
     return f"{current_date} {hh:02d}:{mm:02d}:00"
 
 
+def _to_date(value: str) -> date | None:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except Exception:
+        return None
+    
 def _extract_sender_name_from_block(block):
     cand = block.select_one(".tooltip-container.staff_name_show span.underline.cursor-pointer")
     if cand:
@@ -125,6 +131,7 @@ def _save_message(cur, user_id: int, sender: str, sender_name: str | None, messa
 
 def scrape_messages(driver, base_url="https://step.lme.jp"):
     target_date = (datetime.now(JST) - timedelta(days=1)).strftime("%Y-%m-%d")
+    target_date_obj = _to_date(target_date)
     print(f"🗓 取得対象日(JST): {target_date}")
 
     api_mode = use_api_mode()
@@ -163,6 +170,10 @@ def scrape_messages(driver, base_url="https://step.lme.jp"):
                     if m:
                         y, mo, d = map(int, m.groups())
                         current_date = f"{y:04d}-{mo:02d}-{d:02d}"
+                        current_date_obj = _to_date(current_date)
+                        if target_date_obj and current_date_obj and current_date_obj < target_date_obj:
+                            print(f"⏭ 古い日付({current_date})に到達したため、ユーザーID {user_id} の走査を早期終了")
+                            break
 
                 sender = "you" if block.select_one(".you") else "me" if block.select_one(".me") else None
                 if not sender:
@@ -216,6 +227,10 @@ def scrape_messages(driver, base_url="https://step.lme.jp"):
                             if m:
                                 y, mo, d = map(int, m.groups())
                                 current_date = f"{y:04d}-{mo:02d}-{d:02d}"
+                                current_date_obj = _to_date(current_date)
+                                if target_date_obj and current_date_obj and current_date_obj < target_date_obj:
+                                    print(f"⏭ 古い日付({current_date})に到達したため、ユーザーID {user_id} の走査を早期終了")
+                                    break
 
                         sender = "you" if block.select_one(".you") else "me" if block.select_one(".me") else None
                         if not sender:
