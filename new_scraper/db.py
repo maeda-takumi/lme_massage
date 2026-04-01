@@ -9,7 +9,7 @@ import pymysql
 
 
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.php"
-DEFAULT_DB_API_URL = "http://totalappworks.com/lme/db_bridge.php"
+DEFAULT_DB_API_URL = "https://totalappworks.com/lme/db_bridge.php"
 USE_DB_API_BY_DEFAULT = True
 
 

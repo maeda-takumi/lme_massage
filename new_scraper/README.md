@@ -16,7 +16,7 @@ python -m new_scraper.main
 ### PHP API 経由で実行する場合
 
 1. サーバー上に `db_bridge.php` と `config.php` を配置する
-2. `new_scraper/db.py` の `DEFAULT_DB_API_URL` を利用する（必要なら固定値を書き換える）
+2. `new_scraper/db.py` の `DEFAULT_DB_API_URL`（HTTPS）を利用する（必要なら固定値を書き換える）
 
 ```bash
 python -m new_scraper.main
