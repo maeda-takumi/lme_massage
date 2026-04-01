@@ -40,7 +40,20 @@ def _wait_messages_drawn(driver, timeout=15):
     time.sleep(0.5)
 
 
-def scroll_chat_to_top(driver, max_loops=20, stable_rounds=3, sleep_per_loop=0.5):
+def _extract_oldest_loaded_date(driver) -> date | None:
+    soup = BeautifulSoup(driver.page_source, "html.parser")
+    date_headers = soup.select("#messages-container-v2 .time-center")
+    for header in date_headers:
+        raw = header.get_text(strip=True)
+        m = re.search(r"(\d{4})年(\d{1,2})月(\d{1,2})日", raw)
+        if not m:
+            continue
+        y, mo, d = map(int, m.groups())
+        return date(y, mo, d)
+    return None
+
+
+def scroll_chat_to_top(driver, max_loops=20, stable_rounds=3, sleep_per_loop=0.5, stop_before_date: date | None = None):
     container = _find_chat_scroll_container(driver)
 
     def _get_count():
@@ -73,9 +86,15 @@ def scroll_chat_to_top(driver, max_loops=20, stable_rounds=3, sleep_per_loop=0.5
             same_count_streak = 0
             last_count = count
 
+        if stop_before_date:
+            oldest_loaded_date = _extract_oldest_loaded_date(driver)
+            if oldest_loaded_date and oldest_loaded_date < stop_before_date:
+                return oldest_loaded_date
+            
         if same_count_streak >= stable_rounds:
             break
 
+    return None
 
 def normalize_time_sent(current_date: str | None, time_sent_raw: str):
     if not time_sent_raw:
@@ -157,7 +176,10 @@ def scrape_messages(driver, base_url="https://step.lme.jp"):
             chat_button.click()
             time.sleep(3)
 
-            scroll_chat_to_top(driver)
+            oldest_loaded_date = scroll_chat_to_top(driver, stop_before_date=target_date_obj)
+            if oldest_loaded_date:
+                print(f"⏭ 古い日付({oldest_loaded_date.strftime('%Y-%m-%d')})に到達したため、ユーザーID {user_id} のスクロールを早期終了")
+
             soup = BeautifulSoup(driver.page_source, "html.parser")
             message_blocks = soup.select("#messages-container-v2 > div")
 
@@ -214,7 +236,10 @@ def scrape_messages(driver, base_url="https://step.lme.jp"):
                     chat_button.click()
                     time.sleep(3)
 
-                    scroll_chat_to_top(driver)
+                    oldest_loaded_date = scroll_chat_to_top(driver, stop_before_date=target_date_obj)
+                    if oldest_loaded_date:
+                        print(f"⏭ 古い日付({oldest_loaded_date.strftime('%Y-%m-%d')})に到達したため、ユーザーID {user_id} のスクロールを早期終了")
+                        
                     soup = BeautifulSoup(driver.page_source, "html.parser")
                     message_blocks = soup.select("#messages-container-v2 > div")
 
