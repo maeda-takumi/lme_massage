@@ -1,0 +1,15 @@
+@"
+# secrets
+credentials.json
+*.env
+.env
+
+# python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# local db / artifacts
+*.db
+"@ | Out-File -Encoding utf8 .gitignore
